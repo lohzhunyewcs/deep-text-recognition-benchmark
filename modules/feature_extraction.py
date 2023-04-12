@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch.nn.functional as F
-
+import torch
+import timm
 
 class VGG_FeatureExtractor(nn.Module):
     """ FeatureExtractor of CRNN (https://arxiv.org/pdf/1507.05717.pdf) """
@@ -244,3 +245,20 @@ class ResNet(nn.Module):
         x = self.relu(x)
 
         return x
+
+class TimmModel(nn.Module):
+    def __init__(self, model_name: str, in_features: int, out_features: int) -> None:
+        super().__init__()
+        self.model = timm.create_model(model_name, features_only=True, in_chans=in_features)
+        last_chan = self.model.feature_info.channels()[-1]
+        self.conv = torch.nn.Conv2d(last_chan, out_features, 1)
+        
+    def forward(self, inp: torch.Tensor) -> torch.Tensor:
+        features = self.model(inp)
+        last_feature = features[-1]
+        out = self.conv(last_feature)
+        return out
+
+# def load_timm_model(in_features: int, out_features: int):
+#     model = timm.create_model('convnext_small', features_only=True, in_chans=in_features)
+

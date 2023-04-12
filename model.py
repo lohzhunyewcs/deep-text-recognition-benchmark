@@ -17,7 +17,7 @@ limitations under the License.
 import torch.nn as nn
 
 from modules.transformation import TPS_SpatialTransformerNetwork
-from modules.feature_extraction import VGG_FeatureExtractor, RCNN_FeatureExtractor, ResNet_FeatureExtractor
+from modules.feature_extraction import VGG_FeatureExtractor, RCNN_FeatureExtractor, ResNet_FeatureExtractor, TimmModel
 from modules.sequence_modeling import BidirectionalLSTM
 from modules.prediction import Attention, TransformerDecoder, TorchDecoderWrapper
 from utils import CTCLabelConverter, CTCLabelConverterForBaiduWarpctc, AttnLabelConverter, Averager
@@ -41,14 +41,17 @@ class Model(nn.Module):
             print('No Transformation module specified')
 
         """ FeatureExtraction """
-        if opt.FeatureExtraction == 'VGG':
-            self.FeatureExtraction = VGG_FeatureExtractor(opt.input_channel, opt.output_channel)
-        elif opt.FeatureExtraction == 'RCNN':
-            self.FeatureExtraction = RCNN_FeatureExtractor(opt.input_channel, opt.output_channel)
-        elif opt.FeatureExtraction == 'ResNet':
-            self.FeatureExtraction = ResNet_FeatureExtractor(opt.input_channel, opt.output_channel)
+        if opt.use_timm:
+            self.FeatureExtraction = TimmModel(opt.FeatureExtraction, opt.input_channel, opt.output_channel)
         else:
-            raise Exception('No FeatureExtraction module specified')
+            if opt.FeatureExtraction == 'VGG':
+                self.FeatureExtraction = VGG_FeatureExtractor(opt.input_channel, opt.output_channel)
+            elif opt.FeatureExtraction == 'RCNN':
+                self.FeatureExtraction = RCNN_FeatureExtractor(opt.input_channel, opt.output_channel)
+            elif opt.FeatureExtraction == 'ResNet':
+                self.FeatureExtraction = ResNet_FeatureExtractor(opt.input_channel, opt.output_channel)
+            else:
+                raise Exception('No FeatureExtraction module specified')
         self.FeatureExtraction_output = opt.output_channel  # int(imgH/16-1) * 512
         self.AdaptiveAvgPool = nn.AdaptiveAvgPool2d((None, 1))  # Transform final (imgH/16-1) -> 1
 
