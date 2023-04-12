@@ -121,11 +121,15 @@ def validation(model, criterion, evaluation_loader, converter, opt):
         
         else:
             preds = model(image, text_for_pred, is_train=False)
+
             forward_time = time.time() - start_time
 
             preds = preds[:, :text_for_loss.shape[1] - 1, :]
             target = text_for_loss[:, 1:]  # without [GO] Symbol
-            cost = criterion(preds.contiguous().view(-1, preds.shape[-1]), target.contiguous().view(-1))
+            if 'Attn' in opt.Prediction:
+                cost = criterion(preds.contiguous().view(-1, preds.shape[-1]), target.contiguous().view(-1))
+            else:
+                cost = criterion(preds.permute(0, 2, 1), target)
 
             # select max probabilty (greedy decoding) then decode index to character
             _, preds_index = preds.max(2)
@@ -140,7 +144,7 @@ def validation(model, criterion, evaluation_loader, converter, opt):
         preds_max_prob, _ = preds_prob.max(dim=2)
         confidence_score_list = []
         for gt, pred, pred_max_prob in zip(labels, preds_str, preds_max_prob):
-            if 'Attn' in opt.Prediction:
+            if opt.Prediction in ['Attn', 'TransformerDecoder']:
                 gt = gt[:gt.find('[s]')]
                 pred_EOS = pred.find('[s]')
                 pred = pred[:pred_EOS]  # prune after "end of sentence" token ([s])

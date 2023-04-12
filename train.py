@@ -117,6 +117,11 @@ def train(opt):
             else:
                 preds = preds.log_softmax(2).permute(1, 0, 2)
                 cost = criterion(preds, text, preds_size, length)
+        
+        elif 'TransformerDecoder' in opt.Prediction:
+            preds: torch.Tensor = model(image, text[:, :-1])  # align with Attention.forward
+            target = text[:, 1:]  # without [GO] Symbol
+            cost = criterion(preds.permute(0, 2, 1), target)
 
         else:
             preds = model(image, text[:, :-1])  # align with Attention.forward
@@ -165,7 +170,7 @@ def train(opt):
                 head = f'{"Ground Truth":25s} | {"Prediction":25s} | Confidence Score & T/F'
                 predicted_result_log = f'{dashed_line}\n{head}\n{dashed_line}\n'
                 for gt, pred, confidence in zip(labels[:5], preds[:5], confidence_score[:5]):
-                    if 'Attn' in opt.Prediction:
+                    if opt.Prediction in ['Attn', 'TransformerDecoder']:
                         gt = gt[:gt.find('[s]')]
                         pred = pred[:pred.find('[s]')]
 
@@ -173,6 +178,11 @@ def train(opt):
                 predicted_result_log += f'{dashed_line}'
                 print(predicted_result_log)
                 log.write(predicted_result_log + '\n')
+
+        # save latest model
+        torch.save(
+            model.state_dict(), f'./saved_models/{opt.exp_name}/latest.pth'
+        )
 
         # save model per 1e+5 iter.
         if (iteration + 1) % 1e+5 == 0:

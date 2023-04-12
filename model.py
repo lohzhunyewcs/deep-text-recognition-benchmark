@@ -19,10 +19,11 @@ import torch.nn as nn
 from modules.transformation import TPS_SpatialTransformerNetwork
 from modules.feature_extraction import VGG_FeatureExtractor, RCNN_FeatureExtractor, ResNet_FeatureExtractor
 from modules.sequence_modeling import BidirectionalLSTM
-from modules.prediction import Attention
+from modules.prediction import Attention, TransformerDecoder, TorchDecoderWrapper
 from utils import CTCLabelConverter, CTCLabelConverterForBaiduWarpctc, AttnLabelConverter, Averager
 import torch.nn.init as init
 import torch
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class Model(nn.Module):
 
@@ -56,38 +57,101 @@ class Model(nn.Module):
             self.SequenceModeling = nn.Sequential(
                 BidirectionalLSTM(self.FeatureExtraction_output, opt.hidden_size, opt.hidden_size),
                 BidirectionalLSTM(opt.hidden_size, opt.hidden_size, opt.hidden_size))
-            self.SequenceModeling_output = opt.hidden_size
         else:
+            # self.SequenceModeling = nn.Conv2d(
+            #     in_channels=self.FeatureExtraction_output, out_channels=opt.hidden_size,kernel_size=1
+            # )
+            self.SequenceModeling = nn.Conv1d(
+                in_channels=self.FeatureExtraction_output, out_channels=opt.hidden_size,kernel_size=1
+            )
             print('No SequenceModeling module specified')
-            self.SequenceModeling_output = self.FeatureExtraction_output
+            # self.SequenceModeling_output = self.FeatureExtraction_output
+
+        self.SequenceModeling_output = opt.hidden_size
 
         """ Prediction """
         if opt.Prediction == 'CTC':
             self.Prediction = nn.Linear(self.SequenceModeling_output, opt.num_class)
         elif opt.Prediction == 'Attn':
             self.Prediction = Attention(self.SequenceModeling_output, opt.hidden_size, opt.num_class)
+        elif opt.Prediction == 'TransformerDecoder':
+            # seq_length + 2 to include <start> and <end> characters
+            if opt.use_torch_transformer:
+                self.Prediction = TorchDecoderWrapper(
+                    d_model=opt.hidden_size, num_layers=opt.decoder_layers,
+                    num_output=opt.num_class, embedding_dim=opt.hidden_size,
+                    seq_length=opt.batch_max_length + 1,
+                    learnable_embeddings=opt.learnable_pos_embeddings,
+                )
+            else:
+                self.Prediction = TransformerDecoder(
+                    learnable_embeddings=opt.learnable_pos_embeddings, num_output=opt.num_class, 
+                    seq_length = opt.batch_max_length + 1,
+                    embedding_dim=opt.hidden_size, dim_model=opt.hidden_size,
+                    num_layers=opt.decoder_layers
+                )
+
+
         else:
             raise Exception('Prediction is neither CTC or Attn')
 
-    def forward(self, input, text, is_train=True):
+    def forward(self, input, text, is_train=True, debug=False):
+        batch_size = input.shape[0]
         """ Transformation stage """
         if not self.stages['Trans'] == "None":
             input = self.Transformation(input)
 
         """ Feature extraction stage """
         visual_feature = self.FeatureExtraction(input)
+        if debug:
+            print(f'before pool{visual_feature.shape = }')
         visual_feature = self.AdaptiveAvgPool(visual_feature.permute(0, 3, 1, 2))  # [b, c, h, w] -> [b, w, c, h]
+        if debug:
+            print(f'after pool{visual_feature.shape = }')
         visual_feature = visual_feature.squeeze(3)
-
+            
+        if debug:
+            print(f'{visual_feature.shape = }')
+            
         """ Sequence modeling stage """
-        if self.stages['Seq'] == 'BiLSTM':
-            contextual_feature = self.SequenceModeling(visual_feature)
-        else:
-            contextual_feature = visual_feature  # for convenience. this is NOT contextually modeled by BiLSTM
+        if self.stages['Seq'] not in ['BiLSTM']:
+            visual_feature = visual_feature.permute(0, 2, 1)
+            if debug:
+                print(f' after permute{visual_feature.shape = }')
+        contextual_feature = self.SequenceModeling(visual_feature)
+        if self.stages['Seq'] not in ['BiLSTM']:
+            contextual_feature = contextual_feature.permute(0, 2, 1)
+
+        # if self.stages['Seq'] == 'BiLSTM':
+        #     contextual_feature = self.SequenceModeling(visual_feature)
+        # else:
+        #     contextual_feature = visual_feature  # for convenience. this is NOT contextually modeled by BiLSTM
+
+        if debug:
+            print(f'{contextual_feature.shape = }')
 
         """ Prediction stage """
-        if self.stages['Pred'] == 'CTC':
+        if self.stages['Pred'] in ['CTC']:
             prediction = self.Prediction(contextual_feature.contiguous())
+        elif self.stages['Pred'] in ['TransformerDecoder']:
+            # target_tensor = torch.Tensor(
+            #     [[0] * self.opt.batch_max_length for _ in range(batch_size)]
+            # ).int()
+            # + 1 because it'll be first text.... <EOS>
+            if type(self.Prediction) is TransformerDecoder:
+                mask = self.Prediction.generate_attn_mask(self.opt.batch_max_length + 1)
+            else:
+                mask = nn.Transformer.generate_square_subsequent_mask(self.Prediction.seq_length, device= 'cuda' if torch.cuda.is_available() else 'cpu')
+
+            # mask = torch.ones((1,1))
+            target_tensor = text
+
+            if debug:
+                print(f'{target_tensor.shape = }')
+                print(f'{mask.shape = }')
+
+            prediction = self.Prediction(target_tensor, contextual_feature.contiguous(), mask, debug=debug)
+            # prediction = self.Prediction(contextual_feature.contiguous(), target_tensor, mask)
         else:
             prediction = self.Prediction(contextual_feature.contiguous(), text, is_train, batch_max_length=self.opt.batch_max_length)
 
@@ -133,7 +197,7 @@ def load_model(opt):
     model.train()
     if opt.saved_model != '':
         print(f'loading pretrained model from {opt.saved_model}')
-        state_dict = torch.load(opt.saved_model)
+        state_dict = torch.load(opt.saved_model, map_location=device)
         if opt.FT:
             last_layer_params = [
                 "module.Prediction.generator.weight",
