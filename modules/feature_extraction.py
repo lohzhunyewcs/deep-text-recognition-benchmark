@@ -249,7 +249,7 @@ class ResNet(nn.Module):
 class TimmModel(nn.Module):
     def __init__(self, model_name: str, in_features: int, out_features: int) -> None:
         super().__init__()
-        self.model = timm.create_model(model_name, features_only=True, in_chans=in_features, pretrained=True)
+        self.model = timm.create_model(model_name, features_only=True, in_chans=in_features, pretrained=False)
         last_chan = self.model.feature_info.channels()[-1]
         self.conv = torch.nn.Conv2d(last_chan, out_features, 1)
         
@@ -257,6 +257,7 @@ class TimmModel(nn.Module):
         features = self.model(inp)
         last_feature = features[-1]
         out = self.conv(last_feature)
+        out = F.relu(out)
         return out
 
 # def load_timm_model(in_features: int, out_features: int):
