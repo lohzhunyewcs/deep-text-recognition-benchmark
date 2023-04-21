@@ -52,6 +52,7 @@ def get_cfgs(string_arg: list[str]=None):
     parser.add_argument('--learnable_pos_embeddings', action='store_true', help='whether to use learnable positional embeddings')
     parser.add_argument('--use_torch_transformer', action='store_true', help='whether to use learnable positional embeddings')
     parser.add_argument('--use_timm', action='store_true', help='whether to use timm models as feature extractors')
+    parser.add_argument('--dropout', type=float, default=0.1, help='dropout for model if relevant. default=0.1')
 
     # For testing
     parser.add_argument('--eval_data', type=str, default="", help='path to evaluation dataset')

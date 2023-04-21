@@ -85,13 +85,15 @@ class Model(nn.Module):
                     num_output=opt.num_class, embedding_dim=opt.hidden_size,
                     seq_length=opt.batch_max_length + 1,
                     learnable_embeddings=opt.learnable_pos_embeddings,
+                    dropout=opt.dropout,
                 )
             else:
                 self.Prediction = TransformerDecoder(
                     learnable_embeddings=opt.learnable_pos_embeddings, num_output=opt.num_class, 
                     seq_length = opt.batch_max_length + 1,
                     embedding_dim=opt.hidden_size, dim_model=opt.hidden_size,
-                    num_layers=opt.decoder_layers
+                    num_layers=opt.decoder_layers,
+                    dropout=opt.dropout,
                 )
 
 

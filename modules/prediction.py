@@ -90,13 +90,14 @@ class TorchDecoderWrapper(nn.Module):
     def __init__(self, 
                 d_model: int, num_layers: int,
                 num_output: int, embedding_dim: int,
-                seq_length: int, learnable_embeddings: bool
+                seq_length: int, learnable_embeddings: bool,
+                dropout: float
             ) -> None:
         super().__init__()
         self.model = nn.TransformerDecoder(
             decoder_layer= nn.TransformerDecoderLayer(
                 d_model=d_model, nhead=4,
-                batch_first=True
+                batch_first=True,dropout=dropout
             ), 
             num_layers=num_layers
         )
@@ -104,17 +105,17 @@ class TorchDecoderWrapper(nn.Module):
         self.linear = nn.Linear(in_features=embedding_dim,out_features=num_output)
         self.seq_length = seq_length
         if learnable_embeddings:
-            self.position_embeddings = PositionalEmbedding(learnable=True, num_embeddings=seq_length, embedding_dim=d_model)
+            self.position_embeddings = PositionalEmbedding(learnable=True, num_embeddings=seq_length, embedding_dim=d_model,dropout=dropout)
         else:
-            self.position_embeddings = SinPositionalEncoding(d_model=d_model, max_len=seq_length)
+            self.position_embeddings = SinPositionalEncoding(d_model=d_model, max_len=seq_length,dropout=dropout)
 
     def forward(self, text: torch.Tensor, memory: torch.Tensor, mask: torch.Tensor=None, debug:bool = False) -> torch.Tensor:
         text_embed = self.word_embeddings(text)
-        positional_embeddings = self.position_embeddings(text)
-        if debug:
-            print(f'{text_embed.shape = }, {positional_embeddings.shape = }')
-        # print(f'{positional_embeddings.shape = }, {text_embed.shape = }')
-        text_embed += positional_embeddings
+        text_embed = self.position_embeddings(text_embed)
+        # if debug:
+        #     print(f'{text_embed.shape = }, {positional_embeddings.shape = }')
+        # # print(f'{positional_embeddings.shape = }, {text_embed.shape = }')
+        # text_embed += positional_embeddings
         decoder_out = self.model(text_embed, memory, tgt_mask=mask)
         class_out = self.linear(decoder_out)
         # class_probs = torch.softmax(class_out, dim=-1)
@@ -132,9 +133,9 @@ class TransformerDecoder(nn.Module):
         super().__init__()
         self.device = device
         if learnable_embeddings:
-            self.position_embeddings = PositionalEmbedding(learnable_embeddings, num_embeddings=seq_length, embedding_dim=embedding_dim)
+            self.position_embeddings = PositionalEmbedding(learnable_embeddings, num_embeddings=seq_length, embedding_dim=embedding_dim,dropout=dropout)
         else:
-            self.position_embeddings = SinPositionalEncoding(d_model=dim_model, max_len=seq_length)
+            self.position_embeddings = SinPositionalEncoding(d_model=dim_model, max_len=seq_length,dropout=dropout)
         self.word_embeddings = nn.Embedding(num_embeddings=num_output, embedding_dim=embedding_dim)
 
         self.layers = nn.ModuleList(
@@ -156,11 +157,11 @@ class TransformerDecoder(nn.Module):
         input_shape = input_ids.shape
         seq_length = input_shape[1]
 
-        positional_embeddings = self.position_embeddings(input_ids)
 
         input_embeddings = self.word_embeddings(input_ids)
 
-        input_embeddings += positional_embeddings
+        input_embeddings = self.position_embeddings(input_embeddings)
+
 
         # print(f'starting first decoder layer {input_embeddings.shape = }')
         for layer in self.layers:
