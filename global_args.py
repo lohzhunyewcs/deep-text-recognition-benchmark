@@ -41,7 +41,7 @@ def get_cfgs(string_arg: list[str]=None):
     parser.add_argument('--FeatureExtraction', type=str, required=True,
                         help='FeatureExtraction stage. VGG|RCNN|ResNet')
     parser.add_argument('--SequenceModeling', type=str, required=True, help='SequenceModeling stage. None|BiLSTM')
-    parser.add_argument('--Prediction', type=str, required=True, help='Prediction stage. CTC|Attn')
+    parser.add_argument('--Prediction', type=str, required=True, help='Prediction stage. CTC|Attn|TransformerDecoder')
     parser.add_argument('--num_fiducial', type=int, default=20, help='number of fiducial points of TPS-STN')
     parser.add_argument('--input_channel', type=int, default=1,
                         help='the number of input channel of Feature extractor')
@@ -51,6 +51,8 @@ def get_cfgs(string_arg: list[str]=None):
     parser.add_argument('--decoder_layers', type=int, default=6, help='the number of layers for transformers model')
     parser.add_argument('--learnable_pos_embeddings', action='store_true', help='whether to use learnable positional embeddings')
     parser.add_argument('--use_torch_transformer', action='store_true', help='whether to use learnable positional embeddings')
+    parser.add_argument('--use_timm', action='store_true', help='whether to use timm models as feature extractors')
+    parser.add_argument('--dropout', type=float, default=0.1, help='dropout for model if relevant. default=0.1')
 
     # For testing
     parser.add_argument('--eval_data', type=str, default="", help='path to evaluation dataset')

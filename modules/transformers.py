@@ -32,20 +32,21 @@ class SinPositionalEncoding(nn.Module):
             x: Tensor, shape [batch_size, seq_len, embedding_dim]
         """
         if self.batch_first:
-            return self.pe[:x.size(1)]
+            position_embeddings = self.pe[:x.size(1)]
         else:
-            return self.pe[:x.size(0)]
-        #return self.dropout(x)
+            position_embeddings = self.pe[:x.size(0)]
+        return self.dropout(x + position_embeddings)
 
 class PositionalEmbedding(nn.Module):
-    def __init__(self, learnable: bool, num_embeddings: int, embedding_dim: int) -> None:
+    def __init__(self, learnable: bool, num_embeddings: int, embedding_dim: int, dropout: float=0.1) -> None:
         super().__init__()
         self.embeddings = nn.Embedding(num_embeddings=num_embeddings, embedding_dim=embedding_dim)
+        self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, x: torch.Tensor):
         position_ids = torch.arange(x.shape[1], dtype=torch.long, device=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
-        position_ids = position_ids.unsqueeze(0).expand(x.shape)
         position_embeddings = self.embeddings(position_ids)
+        position_embeddings = self.dropout(x + position_embeddings)
         return position_embeddings
 
 def scaled_dot_product_attention(query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, mask: torch.Tensor=None) -> torch.Tensor:
