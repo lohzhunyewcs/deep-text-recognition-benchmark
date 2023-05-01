@@ -18,11 +18,12 @@ import torch.nn as nn
 
 from modules.transformation import TPS_SpatialTransformerNetwork
 from modules.feature_extraction import VGG_FeatureExtractor, RCNN_FeatureExtractor, ResNet_FeatureExtractor, TimmModel
-from modules.sequence_modeling import BidirectionalLSTM
+from modules.sequence_modeling import BidirectionalLSTM, TorchEncoder
 from modules.prediction import Attention, TransformerDecoder, TorchDecoderWrapper
 from utils import CTCLabelConverter, CTCLabelConverterForBaiduWarpctc, AttnLabelConverter, Averager
 import torch.nn.init as init
 import torch
+import os
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class Model(nn.Module):
@@ -60,6 +61,16 @@ class Model(nn.Module):
             self.SequenceModeling = nn.Sequential(
                 BidirectionalLSTM(self.FeatureExtraction_output, opt.hidden_size, opt.hidden_size),
                 BidirectionalLSTM(opt.hidden_size, opt.hidden_size, opt.hidden_size))
+            self.SequenceModeling_output = opt.hidden_size
+        elif opt.SequenceModeling == 'TransformerEncoder':
+            self.SequenceModeling = TorchEncoder(
+                # d_model=opt.hidden_size, num_layers=opt.encoder_layers,
+                d_model=self.FeatureExtraction_output, num_layers=opt.encoder_layers,
+                seq_length=opt.batch_max_length + 1,
+                learnable_embeddings=opt.learnable_pos_embeddings,
+                dropout=opt.dropout,
+            )
+            self.SequenceModeling_output = self.FeatureExtraction_output
         else:
             # self.SequenceModeling = nn.Conv2d(
             #     in_channels=self.FeatureExtraction_output, out_channels=opt.hidden_size,kernel_size=1
@@ -70,7 +81,7 @@ class Model(nn.Module):
             print('No SequenceModeling module specified')
             # self.SequenceModeling_output = self.FeatureExtraction_output
 
-        self.SequenceModeling_output = opt.hidden_size
+            self.SequenceModeling_output = opt.hidden_size
 
         """ Prediction """
         if opt.Prediction == 'CTC':
@@ -81,8 +92,8 @@ class Model(nn.Module):
             # seq_length + 2 to include <start> and <end> characters
             if opt.use_torch_transformer:
                 self.Prediction = TorchDecoderWrapper(
-                    d_model=opt.hidden_size, num_layers=opt.decoder_layers,
-                    num_output=opt.num_class, embedding_dim=opt.hidden_size,
+                    d_model=self.SequenceModeling_output, num_layers=opt.decoder_layers,
+                    num_output=opt.num_class, embedding_dim=self.SequenceModeling_output,
                     seq_length=opt.batch_max_length + 1,
                     learnable_embeddings=opt.learnable_pos_embeddings,
                     dropout=opt.dropout,
@@ -91,7 +102,7 @@ class Model(nn.Module):
                 self.Prediction = TransformerDecoder(
                     learnable_embeddings=opt.learnable_pos_embeddings, num_output=opt.num_class, 
                     seq_length = opt.batch_max_length + 1,
-                    embedding_dim=opt.hidden_size, dim_model=opt.hidden_size,
+                    embedding_dim=self.SequenceModeling_output, dim_model=self.SequenceModeling_output,
                     num_layers=opt.decoder_layers,
                     dropout=opt.dropout,
                 )
@@ -119,12 +130,12 @@ class Model(nn.Module):
             print(f'{visual_feature.shape = }')
             
         """ Sequence modeling stage """
-        if self.stages['Seq'] not in ['BiLSTM']:
+        if self.stages['Seq'] not in ['BiLSTM', 'TransformerEncoder']:
             visual_feature = visual_feature.permute(0, 2, 1)
             if debug:
-                print(f' after permute{visual_feature.shape = }')
+                print(f'after permute {visual_feature.shape = }')
         contextual_feature = self.SequenceModeling(visual_feature)
-        if self.stages['Seq'] not in ['BiLSTM']:
+        if self.stages['Seq'] not in ['BiLSTM', 'TransformerEncoder']:
             contextual_feature = contextual_feature.permute(0, 2, 1)
 
         # if self.stages['Seq'] == 'BiLSTM':
@@ -213,6 +224,11 @@ def load_model(opt):
             model.load_state_dict(state_dict, strict=False)
         else:
             model.load_state_dict(state_dict)
+
+    
+    # check if torch is version 2.0 and is not windows
+    if torch.__version__ >= "2.0.0" and os.name != "nt":
+        model = torch.compile(model)
     print("Model:")
     print(model)
     return model, converter

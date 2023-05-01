@@ -48,7 +48,8 @@ def get_cfgs(string_arg: list[str]=None):
     parser.add_argument('--output_channel', type=int, default=512,
                         help='the number of output channel of Feature extractor')
     parser.add_argument('--hidden_size', type=int, default=256, help='the size of the LSTM hidden state')
-    parser.add_argument('--decoder_layers', type=int, default=6, help='the number of layers for transformers model')
+    parser.add_argument('--decoder_layers', type=int, default=6, help='the number of decoder layers for transformers model')
+    parser.add_argument('--encoder_layers', type=int, default=6, help='the number of encoder layers for transformers model')
     parser.add_argument('--learnable_pos_embeddings', action='store_true', help='whether to use learnable positional embeddings')
     parser.add_argument('--use_torch_transformer', action='store_true', help='whether to use learnable positional embeddings')
     parser.add_argument('--use_timm', action='store_true', help='whether to use timm models as feature extractors')
